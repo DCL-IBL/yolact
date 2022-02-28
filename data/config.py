@@ -128,6 +128,26 @@ dataset_base = Config({
     'label_map': None
 })
 
+test1 = dataset_base.copy({
+    'name': 'test1',
+    'train_images': '/host/dir1/image_out/',
+    'train_info': '/host/dir1/info.json',
+    'valid_images': '/host/dir1/image_out/',
+    'valid_info': '/host/dir1/info.json',
+    'has_gt': False,
+    'label_map': COCO_LABEL_MAP
+})
+
+test2 = dataset_base.copy({
+    'name': 'test2',
+    'train_images': '/home/imodel/1_W04_Va_goal/',
+    'train_info': '/home/imodel/1_W04_Va_goal/info.json',
+    'valid_images': '/home/imodel/1_W04_Va_goal/',
+    'valid_info': '/home/imodel/1_W04_Va_goal/info.json',
+    'has_gt': False,
+    'label_map': COCO_LABEL_MAP
+})
+
 coco2014_dataset = dataset_base.copy({
     'name': 'COCO 2014',
     

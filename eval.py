@@ -302,6 +302,10 @@ class Detections:
     def __init__(self):
         self.bbox_data = []
         self.mask_data = []
+        self.image_data = []
+
+    def add_image(self, image_id:int, width:int, heigth:int, filename:str):
+        self.image_data.append({'image_id':image_id, 'width': width, 'heigth': heigth, 'file_name': filename}) 
 
     def add_bbox(self, image_id:int, category_id:int, bbox:list, score:float):
         """ Note that bbox should be a list or tuple of (x1, y1, x2, y2) """
@@ -317,14 +321,27 @@ class Detections:
             'score': float(score)
         })
 
+    def polyFromMask(self, masked_arr):
+        contours,_ = cv2.findContours(masked_arr, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        segmentation = []
+        for contour in contours:
+            if contour.size >= 6:
+                segmentation.append(contour.flatten().tolist())
+        #RLEs = pycocotools.mask.frPyObjects(segmentation, masked_arr.shape[0], masked_arr.shape[1])
+        #RLE = pycocotools.mask.merge(RLEs)
+        return segmentation
+
     def add_mask(self, image_id:int, category_id:int, segmentation:np.ndarray, score:float):
         """ The segmentation should be the full mask, the size of the image and with size [h, w]. """
         rle = pycocotools.mask.encode(np.asfortranarray(segmentation.astype(np.uint8)))
         rle['counts'] = rle['counts'].decode('ascii') # json.dump doesn't like bytes strings
-
+        #print(segmentation.astype(np.uint8))
+        
         self.mask_data.append({
             'image_id': int(image_id),
             'category_id': get_coco_cat(int(category_id)),
+            #'segmentation': self.polyFromMask(segmentation.astype(np.uint8)),
             'segmentation': rle,
             'score': float(score)
         })
@@ -345,28 +362,46 @@ class Detections:
                         'use_yolo_regressors', 'use_prediction_matching',
                         'train_masks']
 
-        output = {
-            'info' : {
-                'Config': {key: getattr(cfg, key) for key in config_outs},
-            }
-        }
+        #output = {
+        #    'info' : {
+        #        'Config': {key: getattr(cfg, key) for key in config_outs},
+        #    }
+        #}
+        output = {'images' : [], 'categories': [], 'annotations': []}
 
         image_ids = list(set([x['image_id'] for x in self.bbox_data]))
         image_ids.sort()
         image_lookup = {_id: idx for idx, _id in enumerate(image_ids)}
 
-        output['images'] = [{'image_id': image_id, 'dets': []} for image_id in image_ids]
+        for img_id in args.dataset.ids:
+            fname = args.dataset.coco.loadImgs(img_id)[0]['file_name']
+            output['images'].append({
+                'id': img_id,
+                'file_name': fname})
+            
+        output['categories'] = [{'id': cid,'name': cnames} for (cid,cnames) in enumerate(cfg.dataset.class_names)]
 
+        next_id = 0
         # These should already be sorted by score with the way prep_metrics works.
         for bbox, mask in zip(self.bbox_data, self.mask_data):
-            image_obj = output['images'][image_lookup[bbox['image_id']]]
-            image_obj['dets'].append({
-                'score': bbox['score'],
+            #image_obj = output['images'][image_lookup[bbox['image_id']]]
+            #image_obj['dets'].append({
+            #    'score': bbox['score'],
+            #    'bbox': bbox['bbox'],
+            #    'category': cfg.dataset.class_names[get_transformed_cat(bbox['category_id'])],
+            #    'mask': mask['segmentation'],
+            #})
+            next_id = next_id + 1
+            output['annotations'].append({
+                'id': next_id,
+                'image_id': bbox['image_id'],
+                'category_id': get_transformed_cat(bbox['category_id']),
+                'segmentation': mask['segmentation'],
                 'bbox': bbox['bbox'],
-                'category': cfg.dataset.class_names[get_transformed_cat(bbox['category_id'])],
-                'mask': mask['segmentation'],
-            })
+                'area': bbox['bbox'][2]*bbox['bbox'][3],
+                'score': bbox['score']})
 
+        print(os.path.join(args.web_det_path, '%s.json' % cfg.name))
         with open(os.path.join(args.web_det_path, '%s.json' % cfg.name), 'w') as f:
             json.dump(output, f)
         
@@ -931,22 +966,25 @@ def evaluate(net:Yolact, dataset, train_mode=False):
         # Main eval loop
         for it, image_idx in enumerate(dataset_indices):
             timer.reset()
-
-            with timer.env('Load Data'):
-                img, gt, gt_masks, h, w, num_crowd = dataset.pull_item(image_idx)
-
+            print(image_idx)
+            #with timer.env('Load Data'):
+            img, gt, gt_masks, h, w, num_crowd = dataset.pull_item(image_idx)
                 # Test flag, do not upvote
-                if cfg.mask_proto_debug:
-                    with open('scripts/info.txt', 'w') as f:
-                        f.write(str(dataset.ids[image_idx]))
-                    np.save('scripts/gt.npy', gt_masks)
+                #if cfg.mask_proto_debug:
+                #    with open('scripts/info.txt', 'w') as f:
+                #        f.write(str(dataset.ids[image_idx]))
+                 #   np.save('scripts/gt.npy', gt_masks)
 
-                batch = Variable(img.unsqueeze(0))
-                if args.cuda:
-                    batch = batch.cuda()
+            batch = Variable(img.unsqueeze(0))
+            if args.cuda:
+                batch = batch.cuda()
 
-            with timer.env('Network Extra'):
+            try:
+                #with timer.env('Network Extra'):
                 preds = net(batch)
+            except:
+                print('exception')
+                continue
             # Perform the meat of the operation here depending on our mode.
             if args.display:
                 img_numpy = prep_display(preds, img, h, w)
@@ -971,9 +1009,8 @@ def evaluate(net:Yolact, dataset, train_mode=False):
                 else: fps = 0
                 progress = (it+1) / dataset_size * 100
                 progress_bar.set_val(it+1)
-                print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
-                    % (repr(progress_bar), it+1, dataset_size, progress, fps), end='')
-
+               # print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
+               #     % (repr(progress_bar), it+1, dataset_size, progress, fps), end='')
 
 
         if not args.display and not args.benchmark:
@@ -1091,7 +1128,8 @@ if __name__ == '__main__':
                                     transform=BaseTransform(), has_gt=cfg.dataset.has_gt)
             prep_coco_cats()
         else:
-            dataset = None        
+            dataset = None
+        args.dataset = dataset
 
         print('Loading model...', end='')
         net = Yolact()
@@ -1104,4 +1142,4 @@ if __name__ == '__main__':
 
         evaluate(net, dataset)
 
-
+        

@@ -115,7 +115,7 @@ class COCODetection(data.Dataset):
             target = [x for x in self.coco.loadAnns(ann_ids) if x['image_id'] == img_id]
         else:
             target = []
-
+        
         # Separate out crowd annotations. These are annotations that signify a large crowd of
         # objects of said class, where there is no annotation for each individual object. Both
         # during testing and training, consider these crowds as neutral.
@@ -139,10 +139,10 @@ class COCODetection(data.Dataset):
 
         path = osp.join(self.root, file_name)
         assert osp.exists(path), 'Image path does not exist: {}'.format(path)
-        
+
         img = cv2.imread(path)
         height, width, _ = img.shape
-        
+
         if len(target) > 0:
             # Pool all the masks for this image into one [num_objects,height,width] matrix
             masks = [self.coco.annToMask(obj).reshape(-1) for obj in target]
@@ -168,8 +168,9 @@ class COCODetection(data.Dataset):
                     {'num_crowds': 0, 'labels': np.array([0])})
                 masks = None
                 target = None
-
-        if target.shape[0] == 0:
+        
+        #if target.shape[0] == 0:
+        if target == []:
             print('Warning: Augmentation output an example with no ground truth. Resampling...')
             return self.pull_item(random.randint(0, len(self.ids)-1))
 

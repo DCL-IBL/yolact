@@ -130,10 +130,10 @@ dataset_base = Config({
 
 test1 = dataset_base.copy({
     'name': 'test1',
-    'train_images': '/host/dir1/image_out/',
-    'train_info': '/host/dir1/info.json',
-    'valid_images': '/host/dir1/image_out/',
-    'valid_info': '/host/dir1/info.json',
+    'train_images': '/host/mic21-framework/image_out/',
+    'train_info': '/host/mic21-framework/info.json',
+    'valid_images': '/host/mic21-framework/image_out/',
+    'valid_info': '/host/mic21-framework/info.json',
     'has_gt': False,
     'label_map': COCO_LABEL_MAP
 })
